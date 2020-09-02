@@ -223,35 +223,48 @@ style_by_year = function(s) {
     rename(., winner_style = style) %>% 
     inner_join(., just_styles, by = c('loser_name' = 'name')) %>% 
     rename(., loser_style = style) %>% 
-    select(., -games1, -games2, -set)
+    select(., -set) %>% 
+    mutate(., winner_games = pmax(games1, games2),
+           loser_games = pmin(games1, games2)) %>% 
+    select(., -games1, -games2)
   
-  style_matchups = WL_by_style %>% 
+  style_matchups = WL_by_style %>%
     group_by(., winner_style, loser_style) %>% 
-    summarise(., matches = n()) %>% 
+    summarise(., winning_style_games = sum(winner_games),
+              losing_style_games = sum(loser_games)) %>%
     filter(., winner_style != loser_style)
-  
+
   win_pct = function(x, y) {
+    xx = style_matchups$winning_style_games
+    yy = style_matchups$losing_style_games
     res = c()
     for (i in 1:12) {
       for (j in 1:12) {
         if (x[i] == y[j] & x[j] == y[i]) {
-          res[i] = style_matchups$matches[i]/(style_matchups$matches[i] + style_matchups$matches[j])
+          res[i] = (xx[i]+yy[j])/(xx[i]+yy[j]+xx[j]+yy[i])
         }
       }
     }
     return(res)
   }
-  
+
   style_matchups$win_percent =
     win_pct(style_matchups$winner_style, style_matchups$loser_style)
   
+  style_matchups = style_matchups %>% 
+    mutate(., year = as.numeric(s))
+
   return(list('overall mean winners per game' = mwpg,
               'overall mean unforced per game' = mupg,
               'mean W/UE and style per player' = master_means,
               'style matchups' = style_matchups))
+  
+  return(style_matchups)
 }
 
-for(s in as.character(2005:2020)) {
-  d = data.frame()
-}
+# style_multi_yr = style_by_year('2005')
+# for (i in as.character(2006:2008, 2010:2020)) {
+#   style_multi_yr = bind(style_multi_yr, style_by_year(i))
+# }
 
+#figure out what's wrong with 2009
