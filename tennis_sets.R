@@ -79,10 +79,18 @@ style_by_year = function(s) {
   })
   
   DF2 = DF %>% 
-    filter(., ! grepl('RET', score, fixed = T)) %>% 
-    separate(., score, sep = ' ',
-             into = c('set1', 'set2', 'set3'),
-             fill = 'right')
+    filter(., !grepl('RET', score, fixed = T)) %>%
+    filter(., !grepl('W/O', score, fixed = T)) %>%
+    filter(., !grepl('J', score, fixed = T)) %>%
+    separate(
+      .,
+      score,
+      sep = ' ',
+      into = c('set1', 'set2', 'set3', 'set4'),
+      fill = 'right'
+    ) %>% 
+    filter(., is.na(set4) == TRUE) %>% 
+    select(., -set4)
   
   DF_set1 = DF2 %>% 
     select(., year,
@@ -109,7 +117,9 @@ style_by_year = function(s) {
     mutate(., set = 3)
   
   DF_sets = bind_rows(DF_set1, DF_set2, DF_set3) %>% 
-    filter(., setscore != 'W/O', is.na(setscore) == F) %>% 
+    filter(., setscore != 'DEF',
+           is.na(setscore) == F,
+           setscore != '') %>% 
     mutate(., setscore = sub(pattern = '\\(.*\\)', replacement = '', x = setscore))
   
   DF_sets = DF_sets %>% 
@@ -208,14 +218,10 @@ style_by_year = function(s) {
                 master_means$mean_winners_per_game >= mwpg ~ 'LRI_HRE',
               master_means$mean_unforced_per_game < mupg &
                 master_means$mean_winners_per_game < mwpg ~ 'LRI_LRE')
-  master_means %>% 
+  style_counts = master_means %>% 
     group_by(., style) %>% 
     summarise(., n())
-  
-  master_means %>% 
-    ggplot(., aes(x = mean_winners_per_game, y = mean_unforced_per_game)) +
-    geom_point(aes(color = style))
-  
+
   just_styles = master_means %>% 
     select(., name, style)
   
@@ -232,14 +238,25 @@ style_by_year = function(s) {
     group_by(., winner_style, loser_style) %>% 
     summarise(., winning_style_games = sum(winner_games),
               losing_style_games = sum(loser_games)) %>%
-    filter(., winner_style != loser_style)
+    filter(., winner_style != loser_style) %>% 
+    ungroup(.)
+  
+  if (s == '2009') {
+    style_matchups = style_matchups %>% 
+      rbind(., c('HRI_HRE', 'LRI_HRE', 0, 0))
+    style_matchups$winning_style_games = 
+      as.numeric(style_matchups$winning_style_games)
+    style_matchups$losing_style_games = 
+      as.numeric(style_matchups$losing_style_games)
+  }
 
   win_pct = function(x, y) {
+    k = nrow(style_matchups)
     xx = style_matchups$winning_style_games
     yy = style_matchups$losing_style_games
     res = c()
-    for (i in 1:12) {
-      for (j in 1:12) {
+    for (i in 1:k) {
+      for (j in 1:k) {
         if (x[i] == y[j] & x[j] == y[i]) {
           res[i] = (xx[i]+yy[j])/(xx[i]+yy[j]+xx[j]+yy[i])
         }
@@ -250,21 +267,74 @@ style_by_year = function(s) {
 
   style_matchups$win_percent =
     win_pct(style_matchups$winner_style, style_matchups$loser_style)
-  
-  style_matchups = style_matchups %>% 
+
+  style_matchups = style_matchups %>%
     mutate(., year = as.numeric(s))
+  
+  temp1 = style_matchups %>% 
+    group_by(., winner_style) %>% 
+    summarise(., games_won = sum(winning_style_games),
+              games_lost = sum(losing_style_games)) %>% 
+    select(style = winner_style, games_won, games_lost)
+  
+  temp2 = style_matchups %>% 
+    group_by(., loser_style) %>% 
+    summarise(., games_won = sum(losing_style_games),
+              games_lost = sum(winning_style_games)) %>% 
+    select(style = loser_style, games_won, games_lost)
+  
+  style_win_percent = bind_rows(temp1, temp2) %>% 
+    group_by(style) %>% 
+    summarise(., games_won = sum(games_won), games_lost = sum(games_lost)) %>% 
+    mutate(., win_percent = games_won/(games_won + games_lost))
 
   return(list('overall mean winners per game' = mwpg,
               'overall mean unforced per game' = mupg,
+              'number of players per style' = style_counts,
               'mean W/UE and style per player' = master_means,
-              'style matchups' = style_matchups))
-  
-  return(style_matchups)
+              'style matchups' = style_matchups,
+              'win percent by style' = style_win_percent),
+              ' ' = WL_by_style)
+
 }
 
-# style_multi_yr = style_by_year('2005')
-# for (i in as.character(2006:2008, 2010:2020)) {
-#   style_multi_yr = bind(style_multi_yr, style_by_year(i))
-# }
+Mwpg = function(s) return(style_by_year(s)[[1]])
 
-#figure out what's wrong with 2009
+Mupg = function(s) return(style_by_year(s)[[2]])
+
+Style_counts = function(s) return(style_by_year(s)[[3]])
+
+Master_means = function(s) return(style_by_year(s)[[4]])
+
+Style_matchups = function(s) return(style_by_year(s)[[5]])
+
+Style_win_percent = function(s) {
+  return(style_by_year(s)[[6]]) %>% 
+    mutate(., year = as.numeric(s))
+}
+
+all_win_percents = bind_rows(Style_win_percent('2006'),
+          Style_win_percent('2007'),
+          Style_win_percent('2008'),
+          Style_win_percent('2009'),
+          Style_win_percent('2010'),
+          Style_win_percent('2011'),
+          Style_win_percent('2012'),
+          Style_win_percent('2013'),
+          Style_win_percent('2014'),
+          Style_win_percent('2015'),
+          Style_win_percent('2016'),
+          Style_win_percent('2017'),
+          Style_win_percent('2018'),
+          Style_win_percent('2019'),
+          Style_win_percent('2020'))
+all_win_percents %>% 
+  ggplot(., aes(x = year, y = win_percent)) +
+  geom_line(aes(color = style))
+
+
+#### rework styles:
+## aggressive: num winners >= avg.
+## defensive: num winners < avg.
+## consistent: ratio winners/errors >= avg.
+## erratic: ratio winners/errors < avg.
