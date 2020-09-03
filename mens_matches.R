@@ -535,63 +535,94 @@ means = master_allsets %>%
   summarise(
     .,
     mean_winners_per_game = sum(winners) / (sum(games1) + sum(games2)),
-    mean_unforced_per_game = sum(unforced) / (sum(games1) + sum(games2))
+    winners_to_unforced_ratio = sum(winners) / (sum(unforced))
   )
 
 #mean winners/unforced per game overall among all players:
 mwpg = means[1, 1]
-mupg = means[1, 2]
+wtur = means[1, 2]
 
 master_means = master_allsets %>%
   group_by(., name) %>%
   summarise(
     .,
     mean_winners_per_game = sum(winners) / (sum(games1) + sum(games2)),
-    mean_unforced_per_game = sum(unforced) / (sum(games1) + sum(games2))
+    winners_to_unforced_ratio = sum(winners) / (sum(unforced))
   )
 
-master_means
+master_means %>% 
+  summarise(.,
+            mean(winners_to_unforced_ratio),
+            median(winners_to_unforced_ratio))
 
-master_means$style =
+ggplot(master_means, aes(x = mean_winners_per_game)) +
+  geom_density() #symmetric
+
+ggplot(master_means, aes(x = winners_to_unforced_ratio)) +
+  geom_density() #skewed right
+
+
+master_means$consistency =
   case_when(
-    master_means$mean_unforced_per_game >= mupg &
-      master_means$mean_winners_per_game >= mwpg ~ 'HRI_HRE',
-    master_means$mean_unforced_per_game >= mupg &
-      master_means$mean_winners_per_game < mwpg ~ 'HRI_LRE',
-    master_means$mean_unforced_per_game < mupg &
-      master_means$mean_winners_per_game >= mwpg ~ 'LRI_HRE',
-    master_means$mean_unforced_per_game < mupg &
-      master_means$mean_winners_per_game < mwpg ~ 'LRI_LRE'
+    master_means$winners_to_unforced_ratio >= wtur  ~ 'consistent',
+    master_means$winners_to_unforced_ratio < wtur ~ 'inconsistent'
   )
+
+master_means$aggression = 
+  case_when(
+    master_means$mean_winners_per_game >= mwpg ~ 'aggressive',
+    master_means$mean_winners_per_game < mwpg ~ 'defensive')
 
 style_counts =  master_means %>%
-   group_by(., style) %>%
+   group_by(., consistency, aggression) %>%
    summarise(., n())
 
+master_means %>% 
+  filter(., name == 'Venus Williams')
 style_counts
+master_means %>% 
+  ggplot(., aes(x = mean_winners_per_game, y = winners_to_unforced_ratio)) +
+  geom_point(aes(color = aggression, shape = consistency))
+
+cor(master_means$mean_winners_per_game, master_means$winners_to_unforced_ratio)
 
 just_styles = master_means %>%
-  select(., name, style)
+  select(., name, consistency, aggression)
 just_styles
 
+WL_by_style
+
+
 WL_by_style =  inner_join(DF_sets, just_styles, by = c('winner_name' = 'name')) %>%
-  rename(., winner_style = style) %>%
+  rename(.,
+         winner_aggression = aggression,
+         winner_consistency = consistency) %>%
   inner_join(., just_styles, by = c('loser_name' = 'name')) %>%
-  rename(., loser_style = style) %>%
+  rename(.,
+         loser_aggression = aggression,
+         loser_consistency = consistency) %>%
   select(.,-set) %>%
   mutate(.,
          winner_games = pmax(games1, games2),
          loser_games = pmin(games1, games2)) %>%
   select(.,-games1,-games2)
 
+WL_by_style
+
 style_matchups = WL_by_style %>%
-  group_by(., winner_style, loser_style) %>%
+  group_by(.,
+           winner_aggression,
+           winner_consistency,
+           loser_aggression,
+           loser_consistency) %>%
   summarise(
     .,
-    winning_style_games = sum(winner_games),
-    losing_style_games = sum(loser_games)
+    winner_games = sum(winner_games),
+    loser_games = sum(loser_games)
   ) %>%
-  filter(., winner_style != loser_style)
+  filter(., (winner_aggression != loser_aggression) |
+           (winner_consistency != loser_consistency)) %>% 
+  ungroup(.)
 
 WL_by_style
 style_matchups
@@ -626,23 +657,59 @@ style_matchups
 WL_by_style
 master_W
 blah1 = WL_by_style %>% 
-  filter(., winner_style == loser_style) %>% 
-  mutate(., style = loser_style) %>% 
-  select(., -loser_style, -winner_style) %>% 
-  group_by(., style, name = winner_name) %>% 
-  summarise(., games_won= sum(winner_games), games_lost = sum(loser_games))
-blah1
+  filter(.,
+         winner_aggression == loser_aggression,
+         winner_consistency == loser_consistency) %>% 
+  mutate(.,
+         aggression = winner_aggression,
+         consistency = winner_consistency) %>% 
+  select(.,
+         -winner_aggression,
+         -loser_aggression,
+         -winner_consistency,
+         -loser_consistency
+  ) %>% 
+  group_by(., aggression, consistency, name = winner_name) %>% 
+  summarise(., games_won= sum(winner_games), games_lost = sum(loser_games)) %>% 
+  ungroup(.)
 
 blah2 = WL_by_style %>% 
-  filter(., winner_style == loser_style) %>% 
-  mutate(., style = loser_style) %>% 
-  select(., -loser_style, -winner_style) %>% 
-  group_by(., style, name = loser_name) %>% 
-  summarise(., games_won = sum(loser_games), games_lost = sum(winner_games))
+  filter(.,
+         winner_aggression == loser_aggression,
+         winner_consistency == loser_consistency) %>% 
+  mutate(.,
+         aggression = winner_aggression,
+         consistency = winner_consistency) %>% 
+  select(.,
+         -winner_aggression,
+         -loser_aggression,
+         -winner_consistency,
+         -loser_consistency
+  ) %>% 
+  group_by(., aggression, consistency, name = loser_name) %>% 
+  summarise(., games_won = sum(loser_games), games_lost = sum(winner_games)) %>% 
+  ungroup(.)
+
 blah3 = bind_rows(blah1, blah2) %>% 
-  group_by(., style, name) %>% 
+  group_by(., aggression, consistency, name) %>% 
   summarise(., games_won = sum(games_won), games_lost = sum(games_lost)) %>% 
   mutate(., win_percent = games_won/(games_won + games_lost))
-blah3 %>%
-  filter(., style == 'HRI_HRE') %>% 
-  arrange(., (win_percent))
+blah3
+
+
+barf1 = style_matchups %>%
+  select(., aggression = winner_aggression,
+         consistency = winner_consistency,
+         games_for = winner_games,
+         games_against = loser_games)
+
+barf2 = style_matchups %>%
+  select(., aggression = loser_aggression,
+         consistency = loser_consistency,
+         games_for = loser_games,
+         games_against = winner_games)
+
+bind_rows(barf1, barf2) %>%
+  group_by(., aggression, consistency) %>% 
+  summarise(., games_won = sum(games_for), games_lost = sum(games_against)) %>% 
+  mutate(., win_percent = games_won / (games_won + games_lost))
