@@ -309,7 +309,7 @@ style_by_year = function(s) {
   
   style_counts =  master_means %>%
     group_by(., style) %>%
-    summarise(., n())
+    summarise(., percent = n() / nrow(master_means))
   
   #test
   style_counts
@@ -406,7 +406,7 @@ win.pct.by.style = bind_rows(lapply(2011:2020, function(x) {
 style.counts = bind_rows(lapply(2011:2020, function(x) {
   D = style_by_year(x)[[3]] %>%
     mutate(., year = x) %>%
-    select(., year, style, number = `n()`)
+    select(., year, style, percent)
 }))
 
 
@@ -436,17 +436,6 @@ stats_within_type = function(s) {
   ) %>%
     ungroup(.)
 }
-stats_within_type(2019) %>%
-  ggplot(aes(x = win_pct_within_group, y = mean_winners_per_game)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  facet_wrap( ~ style)
-
-stats_within_type(2019) %>%
-  ggplot(aes(x = win_pct_within_group, y = mean_unforced_per_game)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  facet_wrap( ~ style)
 
 
 correlation_mupg = function(y, s) {
@@ -463,36 +452,6 @@ correlation_mwpg = function(y, s) {
   return(cor(D$x, D$y))
 }
 
-correlation_mupg(2017, 'aggressive, consistent')
-correlation_mwpg(2018, 'defensive, inconsistent')
-
-correlation_df = data.frame(
-  year = 2011:2020,
-  mupg.agg.con =
-    sapply(2011:2020, function(x)
-      correlations_mupg(x, 'aggressive, consistent')),
-  mupg.agg.inc =
-    sapply(2011:2020, function(x)
-      correlations_mupg(x, 'aggressive, inconsistent')),
-  mupg.def.con =
-    sapply(2011:2020, function(x)
-      correlations_mupg(x, 'defensive, consistent')),
-  mupg.def.inc =
-    sapply(2011:2020, function(x)
-      correlations_mupg(x, 'defensive, inconsistent')),
-  mwpg.agg.con =
-    sapply(2011:2020, function(x)
-      correlations_mwpg(x, 'aggressive, consistent')),
-  mwpg.agg.inc =
-    sapply(2011:2020, function(x)
-      correlations_mwpg(x, 'aggressive, inconsistent')),
-  mwpg.def.con =
-    sapply(2011:2020, function(x)
-      correlations_mwpg(x, 'defensive, consistent')),
-  mwpg.def.inc =
-    sapply(2011:2020, function(x)
-      correlations_mwpg(x, 'defensive, inconsistent'))
-)
 
 year = rep(2011:2020, c(4, 4, 4, 4, 4, 4, 4, 4, 4, 4))
 style = rep(
@@ -507,15 +466,22 @@ style = rep(
 correlation_df = data.frame(year = year,
                             style = style,
                             stringsAsFactors = FALSE)
+
 corr.mupg = c()
 corr.mwpg = c()
 for (i in 1:40) {
-  corr.mupg[i] = correlation_mupg(dddd$year[i], dddd$style[i])
-  corr.mwpg[i] = correlation_mwpg(dddd$year[i], dddd$style[i])
+  corr.mupg[i] = correlation_mupg(correlation_df$year[i],
+                                  correlation_df$style[i])
+  corr.mwpg[i] = correlation_mwpg(correlation_df$year[i],
+                                  correlation_df$style[i])
 }
+
 correlation_df$corr.mupg = corr.mupg
+
 correlation_df$corr.mwpg = corr.mwpg
+
 correlation_df
+
 correlation_df %>%
   ggplot(aes(x = year)) +
   geom_line(aes(y = corr.mupg), color = 'red') +
@@ -529,16 +495,10 @@ correlation_df %>%
   ggtitle('Linear correlation between win percent and mean winners per game')
 
 
+#frequencies of playing styles by year
 style.counts %>%
-  ggplot(aes(x = year, y = number)) +
+  ggplot(aes(x = year, y = percent)) +
   geom_col(aes(fill = style), position = 'fill')
-
-players.ratios.style %>%
-  ggplot(aes(x = mean_per_game, y = winners_to_unforced_ratio)) +
-  geom_point(aes(color = style), size = 0.5) +
-  scale_color_brewer(palette = "RdGy") +
-  facet_wrap( ~ year)
-
 
 
 
@@ -609,6 +569,9 @@ with_GS = players.ratios.style %>%
     TRUE ~ 'no'
     )
   )
+
+
+#a plot of grand slam winners among all players, highlighted by style
 with_GS %>%
   ggplot(aes(x = mean_per_game, y = winners_to_unforced_ratio)) +
   geom_point(data = with_GS %>% filter(., GS == 'no'),
@@ -621,3 +584,11 @@ with_GS %>%
     size = 1
   ) +
   facet_wrap( ~ year)
+
+
+#win percent of each style against other styles by year
+style.matchups %>% 
+  ggplot(., aes(x = style, y = win_percent)) +
+  geom_col(aes(fill = opponent), position = 'dodge') +
+  scale_fill_brewer(palette = 'RdGy') +
+  facet_wrap(~year)
