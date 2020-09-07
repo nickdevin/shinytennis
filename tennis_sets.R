@@ -374,9 +374,9 @@ style_by_year = function(s) {
   style_win_pcts = W_UE_by_style %>%
     group_by(., style) %>%
     summarise(.,
-              sum(games_won),
-              sum(games_lost),
-              sum(games_won) / sum(games_won + games_lost))
+              games_won = sum(games_won),
+              games_lost = sum(games_lost),
+              win_percent = sum(games_won) / sum(games_won + games_lost))
   
   
   return(
@@ -390,70 +390,36 @@ style_by_year = function(s) {
   )
 }
 
-style_by_year(2017)
 
-
-players.ratios.style = bind_rows(lapply(2011:2020, function(x) {
+players.ratios.style = bind_rows(lapply(2012:2020, function(x) {
   D = style_by_year(x)[[1]] %>%
     mutate(., year = x)
 }))
 
-win.pct.by.style = bind_rows(lapply(2011:2020, function(x) {
+win.pct.by.style = bind_rows(lapply(2012:2020, function(x) {
   D = style_by_year(x)[[2]] %>%
     mutate(., year = x)
 }))
 
-style.counts = bind_rows(lapply(2011:2020, function(x) {
+style.counts = bind_rows(lapply(2012:2020, function(x) {
   D = style_by_year(x)[[3]] %>%
     mutate(., year = x) %>%
     select(., year, style, percent)
 }))
 
 
-style.matchups = bind_rows(lapply(2011:2020, function(x) {
+style.matchups = bind_rows(lapply(2012:2020, function(x) {
   D = style_by_year(x)[[4]] %>%
     mutate(., year = x)
 }))
 
-by.style = bind_rows(lapply(2011:2020, function(x) {
+by.style = bind_rows(lapply(2012:2020, function(x) {
   D = style_by_year(x)[[5]] %>%
     mutate(., year = x)
 }))
 
 
-stats_within_type = function(s) {
-  return(
-    style_by_year(s)[[5]] %>%
-      group_by(style, name) %>%
-      summarise(
-        .,
-        win_pct_within_group = sum(games_won) / sum(games_won + games_lost),
-        mean_per_game = sum(winners + unforced) / sum(games_won + games_lost),
-        winner_to_unforced_ratio = sum(winners) / sum(unforced),
-        mean_winners_per_game = sum(winners) / sum(games_won + games_lost),
-        mean_unforced_per_game = sum(unforced) / sum(games_won + games_lost),
-      )
-  ) %>%
-    ungroup(.)
-}
-
-
-correlation_mupg = function(y, s) {
-  D = stats_within_type(y) %>%
-    filter(., style == s) %>%
-    select(x = win_pct_within_group, y = mean_unforced_per_game)
-  return(cor(D$x, D$y))
-}
-
-correlation_mwpg = function(y, s) {
-  D = stats_within_type(y) %>%
-    filter(., style == s) %>%
-    select(x = win_pct_within_group, y = mean_winners_per_game)
-  return(cor(D$x, D$y))
-}
-
-
-year = rep(2011:2020, c(4, 4, 4, 4, 4, 4, 4, 4, 4, 4))
+year = rep(2012:2020, c(4, 4, 4, 4, 4, 4, 4, 4, 4))
 style = rep(
   c(
     'aggressive, consistent',
@@ -461,38 +427,26 @@ style = rep(
     'defensive, consistent',
     'defensive, inconsistent'
   ),
-  10
+  9
 )
-correlation_df = data.frame(year = year,
-                            style = style,
-                            stringsAsFactors = FALSE)
 
-corr.mupg = c()
-corr.mwpg = c()
-for (i in 1:40) {
-  corr.mupg[i] = correlation_mupg(correlation_df$year[i],
-                                  correlation_df$style[i])
-  corr.mwpg[i] = correlation_mwpg(correlation_df$year[i],
-                                  correlation_df$style[i])
-}
 
-correlation_df$corr.mupg = corr.mupg
-
-correlation_df$corr.mwpg = corr.mwpg
-
-correlation_df
-
-correlation_df %>%
-  ggplot(aes(x = year)) +
-  geom_line(aes(y = corr.mupg), color = 'red') +
-  facet_wrap( ~ style) +
-  ggtitle('Linear correlation between win percent and mean winners per game')
-
-correlation_df %>%
-  ggplot(aes(x = year)) +
-  geom_line(aes(y = corr.mwpg), color = 'blue') +
-  facet_wrap( ~ style) +
-  ggtitle('Linear correlation between win percent and mean winners per game')
+correlation_df = by.style %>% 
+  group_by(., name) %>% 
+  summarise(.,
+            mmpg = sum(winners + unforced) / sum(games_won + games_lost),
+            wtur = sum(winners) / sum(unforced),
+            mwpg = sum(winners) / sum(games_won + games_lost),
+            mupg = sum(unforced) / sum(games_won + games_lost),
+            win_percent = sum(games_won) / (sum(games_won + games_lost))) %>% 
+  inner_join(., just_styles, by = 'name') %>%
+  ungroup(.) %>% 
+  group_by(style) %>%
+  summarise(cor.mwpg = cor(win_percent, mwpg),
+            cor.mupg = cor(win_percent, mupg),
+            cor.mmpg = cor(win_percent, mmpg),
+            cor.wtur = cor(win_percent, wtur)) %>% 
+  gather(., corr.between, corr.coef, 2:5)
 
 
 #frequencies of playing styles by year
@@ -505,13 +459,7 @@ style.counts %>%
 with_GS = players.ratios.style %>%
   mutate(
     .,
-    GS = case_when(((year == 2011) & (
-      name %in% c('Kim Clijsters',
-                  'Na Li',
-                  'Petra Kvitova',
-                  'Samantha Stosur')
-    )) ~ 'yes',
-    ((year == 2012) & (
+    GS = case_when(((year == 2012) & (
       name %in% c('Victoria Azarenka',
                   'Maria Sharapova',
                   'Serena Williams')
@@ -571,6 +519,7 @@ with_GS = players.ratios.style %>%
   )
 
 
+
 #a plot of grand slam winners among all players, highlighted by style
 with_GS %>%
   ggplot(aes(x = mean_per_game, y = winners_to_unforced_ratio)) +
@@ -592,3 +541,25 @@ style.matchups %>%
   geom_col(aes(fill = opponent), position = 'dodge') +
   scale_fill_brewer(palette = 'RdGy') +
   facet_wrap(~year)
+
+
+#overall win percents for each style by year
+
+win.pct.by.style %>% 
+  ggplot(., aes(x = style, y = win_percent)) + 
+  geom_col(aes(fill = style)) +
+  scale_fill_brewer(palette = 'RdGy') +
+  facet_wrap(~ year)
+
+
+
+
+##################
+
+
+
+correlation_df %>% 
+  ggplot(aes(x = style, y = corr.between,)) +
+  geom_tile(aes(fill = corr.coef, ), colour = 'black') +
+  scale_fill_gradient2(
+    low = "darkred", high = "darkblue", mid = "white", midpoint = 0)
